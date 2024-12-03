@@ -821,7 +821,7 @@ class Swift_Performance_Ajax {
                         echo do_shortcode('[' . $shortcode[0] . ' ' . $attributes . ']');
                         break;
                   case 'template-part':
-                        get_template_part($data[2]);
+                        get_template_part(sanitize_file_name($data[2]));
                         break;
                   case 'nav-menu':
                         $args = Swift_Performance_Cache::get_lazyload_buffer($data[2]);

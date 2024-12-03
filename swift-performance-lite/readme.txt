@@ -125,6 +125,9 @@ Quick Setup, Page Cache, Cache Preloading, Gzip Compression, Browser Caching, Re
 6. Plugin Organizer
 
 == Changelog ==
+2.3.7.2 - 03/12/2024
+[FIX] Improve security
+
 2.3.7.1 - 06/08/2024
 [FIX] Minor bugfixes
 
