@@ -125,6 +125,9 @@ Quick Setup, Page Cache, Cache Preloading, Gzip Compression, Browser Caching, Re
 6. Plugin Organizer
 
 == Changelog ==
+2.3.7.3 - 13/12/2024
+[FIX] Load textdomain on init
+
 2.3.7.2 - 03/12/2024
 [FIX] Improve security
 
