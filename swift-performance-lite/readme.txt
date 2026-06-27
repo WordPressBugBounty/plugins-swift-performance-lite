@@ -1,8 +1,8 @@
 === Swift Performance Lite ===
-Contributors: swte, doit686868, hostmyblogco, fredawd
+Contributors: swte, rtomo, doit686868, hostmyblogco, fredawd
 Tags: cache, performance, optimizer, cdn, speed
 Requires at least: 4.0
-Tested up to: 6.6.1
+Tested up to: 6.9.1
 Requires PHP: 5.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
