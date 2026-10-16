@@ -155,13 +155,7 @@ class Swift_Performance_Image_Optimizer {
 				die;
 				break;
 			case 'optimize_bulk':
-				$settings = json_encode(array(
-					'jpeg-quality' 		=> $_REQUEST['jpeg-quality'],
-					'png-quality' 		=> $_REQUEST['png-quality'],
-					'keep-original-images'	=> $_REQUEST['keep-original-images'],
-					'maximum-image-width'	=> ($_REQUEST['resize-large-images'] == 1 ? max(1, $_REQUEST['maximum-image-width']) : ''),
-					'webp'			=> $_REQUEST['webp'],
-				));
+				$settings = json_encode(self::get_request_settings());
 
 				$images = isset($_POST['images']) ? $_POST['images'] : array();
 				$hash_in = array();
@@ -615,6 +609,21 @@ class Swift_Performance_Image_Optimizer {
 	}
 
 	/**
+	 * Get sanitized image optimizer settings from request
+	 * @return array
+	 */
+	public static function get_request_settings(){
+		$resize = (isset($_REQUEST['resize-large-images']) && $_REQUEST['resize-large-images'] == 1);
+		return array(
+			'jpeg-quality' 		=> (isset($_REQUEST['jpeg-quality']) ? min(100, max(0, (int)$_REQUEST['jpeg-quality'])) : 0),
+			'png-quality' 		=> (isset($_REQUEST['png-quality']) ? min(100, max(0, (int)$_REQUEST['png-quality'])) : 0),
+			'keep-original-images'	=> (isset($_REQUEST['keep-original-images']) && $_REQUEST['keep-original-images'] == 1 ? 1 : 0),
+			'maximum-image-width'	=> ($resize ? max(1, (isset($_REQUEST['maximum-image-width']) ? (int)$_REQUEST['maximum-image-width'] : 0)) : ''),
+			'webp'			=> (isset($_REQUEST['webp']) && $_REQUEST['webp'] == 1 ? 1 : 0),
+		);
+	}
+
+	/**
 	 * Optimize images on upload
 	 * @param string|array $file
 	 * @return $mixed
@@ -635,14 +644,9 @@ class Swift_Performance_Image_Optimizer {
 			return $upload;
 		}
 
-		if (isset($_REQUEST['swift_performance_action'])){
-			$settings = json_encode(array(
-				'jpeg-quality' 		=> $_REQUEST['jpeg-quality'],
-				'png-quality' 		=> $_REQUEST['png-quality'],
-				'keep-original-images'	=> $_REQUEST['keep-original-images'],
-				'maximum-image-width'	=> ($_REQUEST['resize-large-images'] == 1 ? max(1, $_REQUEST['maximum-image-width']) : ''),
-				'webp'			=> $_REQUEST['webp'],
-			));
+		// Use request settings only for authorized image optimizer requests
+		if (isset($_REQUEST['swift_performance_action']) && current_user_can('manage_options') && isset($_REQUEST['nonce']) && wp_verify_nonce($_REQUEST['nonce'], 'swift-optimize-images')){
+			$settings = json_encode(self::get_request_settings());
 		}
 		else {
 			$settings = json_encode(array(
@@ -654,8 +658,7 @@ class Swift_Performance_Image_Optimizer {
 			));
 		}
 
-		$values = '("'.md5($image).'", "' . esc_sql($image) . '", "'.(int)$width.'", "'.(int)$height.'", "'.esc_sql($type).'", "'.(int)$original.'", \''.$settings.'\', '.(int)$status.')';
-		$wpdb->query("INSERT IGNORE INTO " . SWIFT_PERFORMANCE_IMAGE_TABLE . " (hash, file, width, height, type, original, settings, status) VALUES " . $values);
+		$wpdb->query($wpdb->prepare("INSERT IGNORE INTO " . SWIFT_PERFORMANCE_IMAGE_TABLE . " (hash, file, width, height, type, original, settings, status) VALUES (%s, %s, %d, %d, %s, %d, %s, %d)", md5($image), $image, $width, $height, $type, $original, $settings, $status));
 
 		if ($status == 2){
 			$this->schedule();

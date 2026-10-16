@@ -1,8 +1,8 @@
 === Swift Performance Lite ===
-Contributors: swte, rtomo, doit686868, hostmyblogco, fredawd
+Contributors: swte, doit686868, hostmyblogco, fredawd
 Tags: cache, performance, optimizer, cdn, speed
 Requires at least: 4.0
-Tested up to: 6.9.1
+Tested up to: 7.1.2
 Requires PHP: 5.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -23,7 +23,7 @@ People spend a lot of time and money on building websites and even more on marke
 **Slow loading websites lose visitors and sales.**
 But we have a solution! Say goodbye to slow loading websites and say hello to Swift Performance Lite or Pro!
 
-Get a complete [Cache & Performance](https://swiftperformance.io/) plugin for free or as a pro.
+Get a complete [Cache & Performance](https://musthaveplugins.com/swift-performance/) plugin for free or as a pro.
 Swift Performance will increase the loading speed of any WordPress website and provides an intelligent, modern caching system. You can even cache AJAX request, dynamic pages, and you can add exceptions (URL, page or content based rules).
 
 **Here are some of our most popular functions.**
@@ -43,7 +43,7 @@ It is both easy and powerful. Optimizing **WordPress performance** is not rocket
 
 We hear your voice! We are continuously improving the plugin, based on customer’s feedback & needs. This is one of the most important factors & mission.
 Give Swift Performance a try.
-Want to unlock more features? [Upgrade to our Pro version.](https://swiftperformance.io/)
+Want to unlock more features? [Upgrade to our Pro version.](https://musthaveplugins.com/swift-performance/)
 
 **Why should you upgrade to Pro?**
 We added our secret ingredients to make a product for our professional users, the result is Swift Performance Pro.
@@ -106,8 +106,14 @@ If CPU usage is constantly higher you may need check the configuration. It is re
 Quick Setup, Page Cache, Cache Preloading, Gzip Compression, Browser Caching, Remove Query Strings, Lazyload, Minify CSS, Minify JS, Combine JS/CSS, Async Execute Combined JS, Defer JS, CDN Support, Cloudflare Support, Varnish Support, Mobile Detection, Multisite Compatibility, Woocommerce Friendly, WPML Support, Cache For Logged In Users, Database Optimizer, Import/Export, DNS Prefetch, Critical CSS On The Fly, Plugin Organizer, Appcache, AJAX Cache, Proxy 3rd Party JS, Inline Small Images, Google Analytics Bypass, Heartbeat Control
 
 = Reviews =
-[Swift Performance Review](https://www.wpmediamastery.com/swift-performance-review-and-settings/) by WPMediaMastery
+[Swift Performance 2 vs Swift Performance AI](https://swiftperformance.io/blog/swift-performance-ai-vs-swift-performance-2/)
 [Swift Performance Comparison](https://www.alentejowebdesign.nl/wp-rocket-vs-swift-performance/) by Alentejo Webdesign
+
+= Our other plugins =
+[Must-Have Security](https://musthaveplugins.com/security/)
+[Must-Have Cookie](https://musthaveplugins.com/cookie/)
+[Must-Have Analytics](https://musthaveplugins.com/analytics/)
+[Must-Have Backup](https://musthaveplugins.com/backup/)
 
 == Installation ==
 
@@ -125,6 +131,9 @@ Quick Setup, Page Cache, Cache Preloading, Gzip Compression, Browser Caching, Re
 6. Plugin Organizer
 
 == Changelog ==
+2.3.7.4 - 16/10/2026
+[FIX] Security improvements (thanks to Naoki Kawahigashi)
+
 2.3.7.3 - 13/12/2024
 [FIX] Load textdomain on init
 
