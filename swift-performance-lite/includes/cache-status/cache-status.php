@@ -138,7 +138,7 @@ class Swift_Performance_Cache_Status_Table extends WP_List_Table
     }
 
     public function single_row( $item ) {
-          echo '<tr data-id="' . Swift_Performance::get_warmup_id($item['url']) . '">';
+          echo '<tr data-id="' . esc_attr(Swift_Performance::get_warmup_id($item['url'])) . '">';
           $this->single_row_columns( $item );
           echo '</tr>';
     }
@@ -170,7 +170,7 @@ class Swift_Performance_Cache_Status_Table extends WP_List_Table
         $subcache_urls  = self::get_subcache($item['url']);
         $actions = array(
                   'view' => '<span class="view-cached'.(!$is_cached ? ' swift-hidden' : '').'" ><a href="'.esc_url(add_query_arg('force-cached', '1', $item['url'])).'" target="_blank">'.esc_html__('View cached', 'swift-performance').'</a> | </span><a href="'.esc_url($item['url']).'" target="_blank">'.esc_html__('View', 'swift-performance').'</a>',
-                  'action' => '<a class="clear-cache'.(!$is_cached ? ' swift-hidden' : '').'" data-url="'.esc_attr($item['url']).'" data-status="'.$item['cache_status'].'" href="#">'.esc_html__('Clear cache', 'swift-performance').'</a><a class="do-cache'.($is_cached ? ' swift-hidden' : '').'" data-url="'.esc_attr($item['url']).'" href="#">'.esc_html__('Cache page', 'swift-performance').'</a>',
+                  'action' => '<a class="clear-cache'.(!$is_cached ? ' swift-hidden' : '').'" data-url="'.esc_attr($item['url']).'" data-status="'.esc_attr($item['cache_status']).'" href="#">'.esc_html__('Clear cache', 'swift-performance').'</a><a class="do-cache'.($is_cached ? ' swift-hidden' : '').'" data-url="'.esc_attr($item['url']).'" href="#">'.esc_html__('Cache page', 'swift-performance').'</a>',
                   'delete' => '<a class="remove-warmup-url" data-url="'.esc_attr($item['url']).'" href="#">'.esc_html__('Remove URL', 'swift-performance').'</a>'
             );
 
@@ -190,12 +190,12 @@ class Swift_Performance_Cache_Status_Table extends WP_List_Table
             $subcache_label = (count($subcache_urls) > 5 ? trim($subcache_label, ',') . (count($subcache_urls) - $count) . ' more' : trim($subcache_label, ', '));
             $subcache_title = trim($subcache_title, ', ');
 
-            $subcache = '<span class="subcache" title="'.$subcache_title.'">' . $subcache_label . '</span>';
+            $subcache = '<span class="subcache" title="'.esc_attr($subcache_title).'">' . esc_html($subcache_label) . '</span>';
         } else {
             $subcache = '';
         }
 
-        return sprintf('%1$s %2$s', urldecode($item['url']) . $subcache, $this->row_actions($actions));
+        return sprintf('%1$s %2$s', esc_html(urldecode($item['url'])) . $subcache, $this->row_actions($actions));
     }
 
     public function usort_reorder($a, $b)

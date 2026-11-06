@@ -82,7 +82,7 @@ class Swift_Performance_Dynamic_Cache_Status_Table extends WP_List_Table
     }
 
     public function single_row( $item ) {
-          echo '<tr data-id="' . $item['id'] . '">';
+          echo '<tr data-id="' . esc_attr($item['id']) . '">';
           $this->single_row_columns( $item );
           echo '</tr>';
     }
@@ -114,7 +114,7 @@ class Swift_Performance_Dynamic_Cache_Status_Table extends WP_List_Table
                     if ($key == 'action'){
                           continue;
                     }
-                    $params[] = "{$key}: {$value}";
+                    $params[] = esc_html($key . ': ' . (is_scalar($value) ? $value : wp_json_encode($value)));
             }
             $request = '<br><small>'.implode(', ', $params).'</small>';
         }
@@ -123,7 +123,7 @@ class Swift_Performance_Dynamic_Cache_Status_Table extends WP_List_Table
                   'delete' => '<a class="clear-single-dynamic-url" data-id="'.esc_attr($item['id']).'" href="#">'.esc_html__('Clear cache', 'swift-performance').'</a>'
             );
 
-        return sprintf('%1$s %2$s %3$s', urldecode($item['url']), $request, $this->row_actions($actions));
+        return sprintf('%1$s %2$s %3$s', esc_html(urldecode($item['url'])), $request, $this->row_actions($actions));
     }
 
     public function usort_reorder($a, $b)

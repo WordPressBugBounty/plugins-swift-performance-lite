@@ -27,29 +27,6 @@ class Swift_Performance_Cache {
             // Prefix
             $prefix = apply_filters('swift_performance_cache_folder_prefix', '');
 
-            // Force cache to check js errors
-            if (isset($_GET['force-cache'])){
-                  $_COOKIE = $_REQUEST = $_POST = $_GET = array();
-                  Swift_Performance::set_option('optimize-prebuild-only',0);
-                  Swift_Performance::set_option('merge-background-only',0);
-
-                  // Check timeout and disable time consuming features if timeout is not extendable
-                  $timeout = get_option('swift_performance_timeout');
-                  if (empty($timeout)){
-                        Swift_Performance::update_option('critical-css', 0);
-                        Swift_Performance::update_option('merge-styles-exclude-3rd-party', 1);
-                        Swift_Performance::update_option('merge-scripts-exlude-3rd-party', 1);
-                  }
-                  else {
-                        Swift_Performance::set_option('critical-css',0);
-                  }
-
-                  add_filter('swift_performance_is_cacheable', '__return_true');
-                  add_action('wp_head', function(){
-                        echo '<script data-dont-merge>window.addEventListener("error", function(){if(parent){parent.postMessage("report-js-error", "*");}});</script>';
-                  },6);
-            }
-
             // Logged in path
             if (!isset($_GET['force-cached']) && defined('LOGGED_IN_COOKIE') && isset($_COOKIE[LOGGED_IN_COOKIE]) && Swift_Performance::check_option('shared-logged-in-cache', '1', '!=')){
                   @list($user_login,,,) = explode('|', $_COOKIE[LOGGED_IN_COOKIE]);

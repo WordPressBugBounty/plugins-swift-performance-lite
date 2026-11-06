@@ -3,7 +3,7 @@
  * Plugin Name: Swift Performance Lite
  * Plugin URI: https://swiftperformance.io
  * Description: Boost your WordPress site
- * Version: 2.3.7.4
+ * Version: 2.3.7.5
  * Author: SWTE
  * Author URI: https://swteplugins.com
  * Text Domain: swift-performance
@@ -98,7 +98,7 @@ if (!class_exists('Swift_Performance')){
 			}
 
 			if (!defined('SWIFT_PERFORMANCE_VER')){
-				define('SWIFT_PERFORMANCE_VER', '2.3.7.4');
+				define('SWIFT_PERFORMANCE_VER', '2.3.7.5');
 			}
 
 			if (!defined('SWIFT_PERFORMANCE_DB_VER')){
@@ -129,7 +129,6 @@ if (!class_exists('Swift_Performance')){
 			if (!defined('SWIFT_PERFORMANCE_LOGO_URI')){
 				if (in_array(Swift_Performance::license_type(), array('lite', 'offline'))){
 					define('SWIFT_PERFORMANCE_LOGO_URI', SWIFT_PERFORMANCE_URI . 'images/logo-lite.png');
-					include_once (SWIFT_PERFORMANCE_DIR . 'includes/promo/promo.php');
 				}
 				else {
 					define('SWIFT_PERFORMANCE_LOGO_URI', SWIFT_PERFORMANCE_URI . 'images/logo.png');

@@ -131,6 +131,11 @@ Quick Setup, Page Cache, Cache Preloading, Gzip Compression, Browser Caching, Re
 6. Plugin Organizer
 
 == Changelog ==
+2.3.7.5 - 04/11/2026
+[IMPROVE] Removed deprecated force-cache feature
+[IMPROVE] Removed BugMonitor installer
+[IMPROVE] Improved escaping
+
 2.3.7.4 - 16/10/2026
 [FIX] Security improvements (thanks to Naoki Kawahigashi)
 
