@@ -657,9 +657,9 @@
             });
 
             // Switch to tab if it is defined in hash
-            var tab = document.location.hash.replace(/^#tab-/,'') + '-header a';
-            if (document.location.hash != '' && jQuery(tab).length > 0){
-                  jQuery(tab).trigger('click');
+            var tab = document.location.hash.replace(/^#tab-/,'');
+            if (/^#[\w\-]+$/.test(tab) && jQuery(tab + '-header a').length > 0){
+                  jQuery(tab + '-header a').trigger('click');
             }
       });
 

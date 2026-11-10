@@ -3,7 +3,7 @@
  * Plugin Name: Swift Performance Lite
  * Plugin URI: https://swiftperformance.io
  * Description: Boost your WordPress site
- * Version: 2.3.7.5
+ * Version: 2.3.7.6
  * Author: SWTE
  * Author URI: https://swteplugins.com
  * Text Domain: swift-performance
@@ -65,7 +65,7 @@ if (!class_exists('Swift_Performance')){
 
 			do_action('swift_performance_before_init');
 
-			Swift_Performance::$http_host = (isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : parse_url(home_url(), PHP_URL_HOST));
+			Swift_Performance::$http_host = (isset($_SERVER['HTTP_HOST']) && is_string($_SERVER['HTTP_HOST']) && preg_match('~^[a-z0-9\.\-_:\[\]]+$~i', $_SERVER['HTTP_HOST']) && strpos($_SERVER['HTTP_HOST'], '..') === false ? $_SERVER['HTTP_HOST'] : parse_url(home_url(), PHP_URL_HOST));
 
 			if (Swift_Performance::check_option('activate-whitelabel', 1) && !defined('SWIFT_PERFORMANCE_WHITELABEL')){
 				define('SWIFT_PERFORMANCE_WHITELABEL', true);
@@ -79,7 +79,7 @@ if (!class_exists('Swift_Performance')){
 			@$this->modules['plugin-organizer'] =  include_once 'modules/plugin-organizer/plugin-organizer.php';
 
 			// Ignore user abort for remote prebuild
-			if (isset($_SERVER['HTTP_X_PREBUILD']) && $_SERVER['HTTP_X_PREBUILD'] == md5(NONCE_SALT)){
+			if (Swift_Performance::is_prebuild_request()){
 				ignore_user_abort(true);
 				if (function_exists('fastcgi_finish_request')){
 					fastcgi_finish_request();
@@ -98,7 +98,7 @@ if (!class_exists('Swift_Performance')){
 			}
 
 			if (!defined('SWIFT_PERFORMANCE_VER')){
-				define('SWIFT_PERFORMANCE_VER', '2.3.7.5');
+				define('SWIFT_PERFORMANCE_VER', '2.3.7.6');
 			}
 
 			if (!defined('SWIFT_PERFORMANCE_DB_VER')){
@@ -173,7 +173,7 @@ if (!class_exists('Swift_Performance')){
 			register_activation_hook( basename(dirname(__FILE__)) . '/performance.php', array('Swift_Performance', 'activate'));
 
 			// Preview mode
-			if (isset($_GET['swift-preview'])){
+			if (isset($_GET['swift-preview']) && is_string($_GET['swift-preview']) && hash_equals(self::get_preview_token(), $_GET['swift-preview'])){
 				global $swift_performance_options;
 				$swift_performance_options = get_option('swift_performance_preview', array());
 				$_COOKIE = $_REQUEST = $_POST = $_GET = array();
@@ -195,7 +195,7 @@ if (!class_exists('Swift_Performance')){
 						if ($html !== false){
 							foreach ($html->find('a') as $node){
 								if (strpos($node->href, Swift_Performance::$http_host) !== false){
-									$node->href = add_query_arg('swift-preview',1,$node->href);
+									$node->href = add_query_arg('swift-preview', Swift_Performance::get_preview_token(), $node->href);
 								}
 							}
 							return $html;
@@ -250,6 +250,11 @@ if (!class_exists('Swift_Performance')){
 			// Prebuild Booster
 			include_once 'includes/classes/class.prebuild-booster.php';
 
+			// Per page settings can be changed only via the meta box
+			add_filter('is_protected_meta', function($protected, $meta_key = ''){
+				return ($meta_key === 'swift_performance_options' ? true : $protected);
+			}, 10, 2);
+
 			// Include Metaboxes
 			if (Swift_Performance::check_option('page-specific-rules',1)){
 				include_once 'includes/classes/class.meta-boxes.php';
@@ -261,9 +266,13 @@ if (!class_exists('Swift_Performance')){
 					$post_id = get_the_ID();
 					if (!empty($post_id)){
 						$settings = apply_filters('swift_performance_per_page_settings', get_post_meta($post_id, 'swift_performance_options', true));
-						if (isset($settings['override-globals']) && $settings['override-globals'] == 1){
-							foreach((array)$settings as $key => $value){
-								Swift_Performance::set_option($key, $value);
+						if (is_array($settings) && isset($settings['override-globals']) && $settings['override-globals'] == 1){
+							// Only that options can be overridden which are available in the meta box
+							$allowed = Swift_Performance_Meta_Boxes::get_allowed_fields();
+							foreach($settings as $key => $value){
+								if (in_array($key, $allowed, true)){
+									Swift_Performance::set_option($key, $value);
+								}
 							}
 						}
 					}
@@ -1059,6 +1068,9 @@ if (!class_exists('Swift_Performance')){
 	                  Swift_Performance_Cache::purge_varnish_url($permalink);
 	            }
 
+			// Token for the prebuild request (bound to the host of the page)
+			$prebuild_token = Swift_Performance::get_prebuild_token($permalink);
+
 			// Use prebuild proxy cloud for remote prebuild
 			if (Swift_Performance::check_option('enable-remote-prebuild-cache',1)){
 				$permalink = SWIFT_PERFORMANCE_API_URL . 'prebuild/' . $permalink;
@@ -1071,11 +1083,11 @@ if (!class_exists('Swift_Performance')){
 
 			// Hit page
 			if (Swift_Performance::check_option('prebuild-speed', -1)){
-				wp_remote_get($permalink, array('headers' => apply_filters('swift_performance_prebuild_headers',array('X-merge-assets' => 'true', 'X-Prebuild' => md5(NONCE_SALT))), 'user-agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36', 'timeout' => 1, 'sslverify' => false));
+				wp_remote_get($permalink, array('headers' => apply_filters('swift_performance_prebuild_headers',array('X-merge-assets' => 'true', 'X-Prebuild' => $prebuild_token)), 'user-agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36', 'timeout' => 1, 'sslverify' => false));
 				$response = '';
 			}
 			else {
-				$response = wp_remote_get($permalink, array('headers' => apply_filters('swift_performance_prebuild_headers',array('X-merge-assets' => 'true', 'X-Prebuild' => 'true')), 'user-agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36', 'timeout' => 120, 'sslverify' => false));
+				$response = wp_remote_get($permalink, array('headers' => apply_filters('swift_performance_prebuild_headers',array('X-merge-assets' => 'true', 'X-Prebuild' => $prebuild_token)), 'user-agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36', 'timeout' => 120, 'sslverify' => false));
 			}
 
 			// Skip on error
@@ -1106,7 +1118,7 @@ if (!class_exists('Swift_Performance')){
 					$id = Swift_Performance::get_warmup_id($permalink);
 					Swift_Performance::mysql_query($wpdb->prepare("UPDATE " . SWIFT_PERFORMANCE_TABLE_PREFIX . "warmup SET type = 'redirect' WHERE id = %s LIMIT 1", $id));
 
-					$_response = wp_safe_remote_get($permalink, array('headers' => apply_filters('swift_performance_prebuild_headers',array('X-merge-assets' => 'true', 'X-Prebuild' => md5(NONCE_SALT))), 'user-agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36', 'timeout' => 15, 'redirection' =>0, 'sslverify' => false));
+					$_response = wp_safe_remote_get($permalink, array('headers' => apply_filters('swift_performance_prebuild_headers',array('X-merge-assets' => 'true', 'X-Prebuild' => $prebuild_token)), 'user-agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36', 'timeout' => 15, 'redirection' =>0, 'sslverify' => false));
 
 					$redirected_to = wp_remote_retrieve_header($_response, 'location');
 					Swift_Performance::log($permalink . ' has been redirected to ' . $redirected_to , 6);
@@ -1121,11 +1133,11 @@ if (!class_exists('Swift_Performance')){
 
 					// Hit page
 					if (Swift_Performance::check_option('prebuild-speed', -1)){
-						wp_remote_get($permalink, array('headers' => apply_filters('swift_performance_mobile_prebuild_headers', array('X-merge-assets' => 'true', 'X-Prebuild' => md5(NONCE_SALT))), 'user-agent' => 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1', 'timeout' => 1, 'sslverify' => false));
+						wp_remote_get($permalink, array('headers' => apply_filters('swift_performance_mobile_prebuild_headers', array('X-merge-assets' => 'true', 'X-Prebuild' => $prebuild_token)), 'user-agent' => 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1', 'timeout' => 1, 'sslverify' => false));
 						$response = '';
 					}
 					else {
-						$response = wp_remote_get($permalink, array('headers' => apply_filters('swift_performance_mobile_prebuild_headers', array('X-merge-assets' => 'true', 'X-Prebuild' => 'true')), 'user-agent' => 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1', 'timeout' => 120, 'sslverify' => false));
+						$response = wp_remote_get($permalink, array('headers' => apply_filters('swift_performance_mobile_prebuild_headers', array('X-merge-assets' => 'true', 'X-Prebuild' => $prebuild_token)), 'user-agent' => 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1', 'timeout' => 120, 'sslverify' => false));
 					}
 
 					// Skip on error
@@ -1732,7 +1744,7 @@ if (!class_exists('Swift_Performance')){
 			$key = md5(Swift_Performance::$http_host . $_SERVER['REQUEST_URI'] . (defined('LOGGED_IN_COOKIE') && isset($_COOKIE[LOGGED_IN_COOKIE]) ? $_COOKIE[LOGGED_IN_COOKIE] : ''));
 
 			// Disable optimizing for users
-			if (Swift_Performance::check_option('optimize-prebuild-only', 1) && !isset($_SERVER['HTTP_X_PREBUILD'])){
+			if (Swift_Performance::check_option('optimize-prebuild-only', 1) && !Swift_Performance::is_prebuild_request()){
 				Swift_Performance::set_thread(false);
 				return false;
 			}
@@ -1816,10 +1828,229 @@ if (!class_exists('Swift_Performance')){
 		}
 
 		/**
+		 * Get secret for internal requests
+		 * @return string
+		 */
+		public static function get_internal_secret(){
+			foreach (array('NONCE_SALT', 'AUTH_SALT', 'SECURE_AUTH_SALT', 'LOGGED_IN_SALT') as $constant){
+				if (defined($constant) && is_string(constant($constant)) && strlen(constant($constant)) >= 16 && constant($constant) !== 'put your unique phrase here'){
+					return constant($constant);
+				}
+			}
+
+			$secret = get_option('swift_performance_internal_secret');
+			if (empty($secret) || !is_string($secret)){
+				$secret = (function_exists('random_bytes') ? bin2hex(random_bytes(32)) : hash('sha256', uniqid(mt_rand(), true) . microtime(true) . mt_rand()));
+				update_option('swift_performance_internal_secret', $secret, false);
+			}
+
+			return $secret;
+		}
+
+		/**
+		 * Get token for preview mode
+		 * @return string
+		 */
+		public static function get_preview_token(){
+			return hash_hmac('md5', 'preview', Swift_Performance::get_internal_secret());
+		}
+
+		/**
+		 * Get token for prebuild requests. The token is bound to the host of the given URL
+		 * @param string $url
+		 * @return string
+		 */
+		public static function get_prebuild_token($url = ''){
+			$host = (empty($url) ? '' : parse_url($url, PHP_URL_HOST));
+			if (empty($host)){
+				$host = parse_url(Swift_Performance::home_url(), PHP_URL_HOST);
+			}
+
+			return hash_hmac('md5', 'prebuild|' . strtolower((string)$host), Swift_Performance::get_internal_secret());
+		}
+
+		/**
+		 * Check is the current request a valid internal prebuild request
+		 * @return boolean
+		 */
+		public static function is_prebuild_request(){
+			static $is_prebuild = null;
+			if ($is_prebuild !== null){
+				return $is_prebuild;
+			}
+
+			$is_prebuild = false;
+			if (isset($_SERVER['HTTP_X_PREBUILD']) && is_string($_SERVER['HTTP_X_PREBUILD']) && strlen($_SERVER['HTTP_X_PREBUILD']) == 32){
+				$hosts = array(
+					(isset($_SERVER['HTTP_HOST']) && is_string($_SERVER['HTTP_HOST']) ? preg_replace('~:\d+$~', '', $_SERVER['HTTP_HOST']) : ''),
+					parse_url(Swift_Performance::home_url(), PHP_URL_HOST),
+					parse_url(Swift_Performance::site_url(), PHP_URL_HOST)
+				);
+
+				foreach (array_unique(array_filter($hosts)) as $host){
+					if (hash_equals(Swift_Performance::get_prebuild_token('http://' . $host . '/'), $_SERVER['HTTP_X_PREBUILD'])){
+						$is_prebuild = true;
+						break;
+					}
+				}
+			}
+
+			return $is_prebuild;
+		}
+
+		/**
 		 * Bypass built in function to be able call it early
 		 */
 		public static function is_user_logged_in(){
 			return apply_filters('swift_performance_is_user_logged_in', (defined('LOGGED_IN_COOKIE') && isset($_COOKIE[LOGGED_IN_COOKIE]) && !empty($_COOKIE[LOGGED_IN_COOKIE])));
+		}
+
+		/**
+		 * Check that a relative cache path is safe to use on the filesystem and in the markup
+		 * @param string $path
+		 * @param boolean $strict also refuse characters which are unsafe in CSS and script context
+		 * @return boolean
+		 */
+		public static function is_safe_path($path, $strict = true){
+			if (!is_string($path)){
+				return false;
+			}
+
+			// Check every decoded form of the path as well
+			$paths = array($path);
+			for ($i = 0; $i < 5; $i++){
+				$decoded = urldecode($path);
+				if ($decoded === $path){
+					break;
+				}
+				// Too deep
+				if ($i == 4){
+					return false;
+				}
+				$paths[] = $path = $decoded;
+			}
+
+			foreach ($paths as $_path){
+				// Traversal, control characters, backslash and markup delimiters
+				if (strpos($_path, './') !== false || preg_match('~(^|/)\.\.?$~', $_path) || preg_match('~[\x00-\x1f\x7f"<>\\\\]~', $_path)){
+					return false;
+				}
+				if ($strict && preg_match('~[\'`(){};]~', $_path)){
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		/**
+		 * Get the path of the current request to use it as a relative folder for assets
+		 * @return string
+		 */
+		public static function get_current_path(){
+			$path = (isset($_SERVER['REQUEST_URI']) && is_string($_SERVER['REQUEST_URI']) ? parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) : '');
+			$path = ltrim(trailingslashit((string)$path), '/');
+
+			// Fall back to the shared folder
+			return (Swift_Performance::is_safe_path($path) ? $path : '');
+		}
+
+		/**
+		 * Get the salt which is used for the logged in cookie. Can be called before pluggable functions are loaded
+		 * @return string
+		 */
+		public static function get_logged_in_salt(){
+			if (function_exists('wp_salt')){
+				return wp_salt('logged_in');
+			}
+
+			$duplicated = array('put your unique phrase here' => true);
+			foreach (array('AUTH', 'SECURE_AUTH', 'LOGGED_IN', 'NONCE', 'SECRET') as $first){
+				foreach (array('KEY', 'SALT') as $second){
+					if (defined("{$first}_{$second}") && is_string(constant("{$first}_{$second}"))){
+						$value = constant("{$first}_{$second}");
+						$duplicated[$value] = isset($duplicated[$value]);
+					}
+				}
+			}
+
+			$values = array('key' => '', 'salt' => '');
+			if (defined('SECRET_KEY') && is_string(SECRET_KEY) && SECRET_KEY && empty($duplicated[SECRET_KEY])){
+				$values['key'] = SECRET_KEY;
+			}
+
+			foreach (array('key', 'salt') as $type){
+				$constant = 'LOGGED_IN_' . strtoupper($type);
+				if (defined($constant) && is_string(constant($constant)) && constant($constant) && empty($duplicated[constant($constant)])){
+					$values[$type] = constant($constant);
+				}
+				else if (empty($values[$type])){
+					$values[$type] = get_site_option('logged_in_' . $type);
+					if (empty($values[$type]) || !is_string($values[$type])){
+						return '';
+					}
+				}
+			}
+
+			return (string)apply_filters('salt', $values['key'] . $values['salt'], 'logged_in');
+		}
+
+		/**
+		 * Get the user login from the logged in cookie, but only if the cookie is authentic.
+		 * Can be called before pluggable functions are loaded
+		 * @return string|boolean
+		 */
+		public static function get_verified_user_login(){
+			static $verified = null;
+			if ($verified !== null){
+				return $verified;
+			}
+
+			$verified = false;
+			if (!defined('LOGGED_IN_COOKIE') || !isset($_COOKIE[LOGGED_IN_COOKIE]) || !is_string($_COOKIE[LOGGED_IN_COOKIE])){
+				return $verified;
+			}
+
+			$elements = explode('|', $_COOKIE[LOGGED_IN_COOKIE]);
+			if (count($elements) !== 4){
+				return $verified;
+			}
+
+			list($login, $expiration, $token, $hmac) = $elements;
+			if ($login === '' || $token === '' || !ctype_digit($expiration)){
+				return $verified;
+			}
+
+			// Same grace period as in core
+			$expired = (int)$expiration;
+			if ((defined('DOING_AJAX') && DOING_AJAX) || (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST')){
+				$expired += 3600;
+			}
+			if ($expired < time()){
+				return $verified;
+			}
+
+			$salt = Swift_Performance::get_logged_in_salt();
+			if (empty($salt)){
+				return $verified;
+			}
+
+			global $wpdb;
+			$user_pass = $wpdb->get_var($wpdb->prepare("SELECT user_pass FROM {$wpdb->users} WHERE user_login = %s", $login));
+			if (empty($user_pass) || !is_string($user_pass)){
+				return $verified;
+			}
+
+			// Password fragment differs between WordPress versions and hash types
+			foreach (array_unique(array(substr($user_pass, 8, 4), substr($user_pass, -4))) as $pass_frag){
+				$key = hash_hmac('md5', $login . '|' . $pass_frag . '|' . $expiration . '|' . $token, $salt);
+				if (hash_equals(hash_hmac('sha256', $login . '|' . $expiration . '|' . $token, $key), $hmac)){
+					$verified = $login;
+					break;
+				}
+			}
+
+			return $verified;
 		}
 
 		/**
@@ -2402,8 +2633,8 @@ if (!class_exists('Swift_Performance')){
 
 				if (!empty($notices['notices'])){
 					foreach ((array)$notices['notices'] as $key => $notice) {
-						$message = '<div class="swift-clear-cache-notice">'.$notice['text'].'</div><div class="swift-notice-buttonset"><a href="#" class="swift-btn swift-btn-gray" data-swift-dismiss-notice>' . esc_html__('Dismiss', 'swift-performance') . '</a></div>';
-						Swift_Performance::add_notice($message, $notice['type'], 'API_MESSAGE_'.$key);
+						$message = '<div class="swift-clear-cache-notice">'.wp_kses_post((string)$notice['text']).'</div><div class="swift-notice-buttonset"><a href="#" class="swift-btn swift-btn-gray" data-swift-dismiss-notice>' . esc_html__('Dismiss', 'swift-performance') . '</a></div>';
+						Swift_Performance::add_notice($message, sanitize_html_class((string)$notice['type']), 'API_MESSAGE_'.$key);
 					}
 				}
 			}
@@ -2533,6 +2764,34 @@ if (!class_exists('Swift_Performance')){
 			$exclude = array_merge((array)$exclude, array('revision', 'nav_menu_item','shop_order','shop_coupon'));
 			$post_types = $wpdb->get_col("SELECT DISTINCT post_type FROM {$wpdb->posts} WHERE post_status = 'publish'");
 			return array_diff($post_types, $exclude);
+		}
+
+		/**
+		 * Resolve a local image path, returns the real path only if it is an image inside the site folders
+		 * @param string $path
+		 * @param array $extensions
+		 * @return string|boolean
+		 */
+		public static function get_local_image($path, $extensions = array('jpg', 'jpeg', 'jpe', 'png', 'gif', 'webp', 'avif', 'svg', 'ico', 'bmp')){
+			if (!is_string($path) || $path === '' || strpos($path, "\0") !== false || strpos($path, '://') !== false){
+				return false;
+			}
+
+			$realpath = @realpath($path);
+			if (empty($realpath) || !@is_file($realpath) || !in_array(strtolower(pathinfo($realpath, PATHINFO_EXTENSION)), (array)$extensions, true)){
+				return false;
+			}
+
+			$upload_dir = wp_upload_dir();
+			$roots = array(ABSPATH, WP_CONTENT_DIR, (isset($upload_dir['basedir']) ? $upload_dir['basedir'] : ''), self::get_home_path());
+			foreach ($roots as $root){
+				$root = (empty($root) ? '' : @realpath($root));
+				if (!empty($root) && strpos($realpath, rtrim($root, '/\\') . DIRECTORY_SEPARATOR) === 0){
+					return $realpath;
+				}
+			}
+
+			return false;
 		}
 
 		/**
@@ -2887,7 +3146,20 @@ if (!class_exists('Swift_Performance')){
 		 */
 		public static function get_unique_id(){
 			$url_path = preg_replace('~\?(.*)$~', '',$_SERVER['REQUEST_URI']);
-			return hash('crc32', $url_path) . '_' . hash('crc32', serialize($_GET)) .'_'. hash('crc32', serialize($_POST));
+			$id = hash('crc32', $url_path) . '_' . hash('crc32', serialize($_GET)) .'_'. hash('crc32', serialize($_POST));
+
+			// Separate objects per user
+			if (defined('LOGGED_IN_COOKIE') && isset($_COOKIE[LOGGED_IN_COOKIE]) && is_string($_COOKIE[LOGGED_IN_COOKIE]) && !empty($_COOKIE[LOGGED_IN_COOKIE]) && Swift_Performance::check_option('shared-logged-in-cache', '1', '!=')){
+				@list($user_login,) = explode('|', $_COOKIE[LOGGED_IN_COOKIE]);
+				$id .= '_' . substr(hash_hmac('sha256', 'user|' . $user_login, Swift_Performance::get_internal_secret()), 0, 16);
+			}
+
+			// Separate objects per session
+			if (isset($_POST['woocommerce-session-cache']) && is_string($_POST['woocommerce-session-cache'])){
+				$id .= '_' . substr(hash_hmac('sha256', 'session|' . $_POST['woocommerce-session-cache'], Swift_Performance::get_internal_secret()), 0, 16);
+			}
+
+			return $id;
 		}
 
 		/**

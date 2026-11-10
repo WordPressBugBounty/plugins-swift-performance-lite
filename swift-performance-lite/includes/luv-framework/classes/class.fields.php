@@ -93,7 +93,7 @@ class Luv_Framework_Fields {
             // Export
             add_action('admin_init', function(){
                   if (current_user_can('manage_options') && isset($_GET['luv-action'])){
-                        if ($_GET['luv-action'] == 'export'){
+                        if ($_GET['luv-action'] == 'export' && isset($_GET['nonce']) && is_string($_GET['nonce']) && wp_verify_nonce($_GET['nonce'], 'luv-framework-export')){
                               header('Content-disposition: attachment; filename=swift-performance-settings.json');
                               header('Content-type: application/json');
                               wp_send_json(apply_filters('luv_framework_export_array', $this->get_options()));

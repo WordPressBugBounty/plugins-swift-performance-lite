@@ -24,7 +24,9 @@ class Swift_Performance_Plugin_Organizer {
        * @param array ruleset
        */
       public function apply_rules($ruleset){
-            if ((isset($_SERVER['REQUEST_URI']) && preg_match('~wp-admin/plugins.php~', $_SERVER['REQUEST_URI'])) || (isset($_GET['subpage']) && $_GET['subpage'] == 'plugin-organizer')){
+            // Never apply rules on the plugins page and on the Plugin Organizer page
+            $is_admin_page = (is_admin() && !(defined('DOING_AJAX') && DOING_AJAX));
+            if ($is_admin_page && ((isset($_SERVER['REQUEST_URI']) && is_string($_SERVER['REQUEST_URI']) && preg_match('~/wp-admin/(network/)?plugins\.php$~', (string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH))) || (isset($_GET['subpage']) && $_GET['subpage'] === 'plugin-organizer'))){
                   return;
             }
             $this->active_plugins = get_option('active_plugins');
@@ -129,23 +131,24 @@ class Swift_Performance_Plugin_Organizer {
                         return (defined('DOING_AJAX') && DOING_AJAX && isset($_REQUEST['action']) && $_REQUEST['action'] == $rule);
                         break;
                   case 'user-role':
-                        foreach ($rule as $role){
-                              if ($role == 'not-logged-in' && !Swift_Performance::is_user_logged_in()){
-                                    return true;
+                        // The cookie has to belong to a real session, the name in it is not enough
+                        $login = Swift_Performance::get_verified_user_login();
+                        foreach ((array)$rule as $role){
+                              if ($role == 'not-logged-in'){
+                                    if ($login === false){
+                                          return true;
+                                    }
                               }
-                              else if ($role == 'logged-in' && Swift_Performance::is_user_logged_in()){
-                                    return true;
+                              else if ($role == 'logged-in'){
+                                    if ($login !== false){
+                                          return true;
+                                    }
                               }
-                              else {
-                                    if (isset($_COOKIE[LOGGED_IN_COOKIE]) && !empty($_COOKIE[LOGGED_IN_COOKIE])){
-                                          @list($login, ) = explode('|', $_COOKIE[LOGGED_IN_COOKIE]);
-                                          if (!empty($login)){
-                                                global $wpdb;
-                                                $roles = maybe_unserialize($wpdb->get_var($wpdb->prepare("SELECT meta_value FROM {$wpdb->usermeta} LEFT JOIN {$wpdb->users} ON user_id = ID WHERE user_login = %s AND meta_key LIKE '{$wpdb->prefix}capabilities'", $login)));
-                                                if ( isset($roles[$role]) ) {
-                                                    return true;
-                                                }
-                                          }
+                              else if ($login !== false && is_string($role)){
+                                    global $wpdb;
+                                    $roles = maybe_unserialize($wpdb->get_var($wpdb->prepare("SELECT meta_value FROM {$wpdb->usermeta} LEFT JOIN {$wpdb->users} ON user_id = ID WHERE user_login = %s AND meta_key = %s", $login, $wpdb->prefix . 'capabilities')));
+                                    if (is_array($roles) && !empty($roles[$role])){
+                                        return true;
                                     }
                               }
                         }

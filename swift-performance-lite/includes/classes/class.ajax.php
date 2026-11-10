@@ -631,6 +631,9 @@ class Swift_Performance_Ajax {
        * Bypass default WP-cron
        */
       public function ajax_bypass_cron(){
+            // Check user and nonce
+            $this->ajax_auth();
+
             Swift_Performance::set_time_limit(3600, 'ajax_bypass_cron');
 
             //Headers
@@ -682,7 +685,7 @@ class Swift_Performance_Ajax {
             update_option('swift_performance_preview', $options);
             wp_send_json(
                   array(
-                        'url' => add_query_arg('swift-preview','1',home_url())
+                        'url' => add_query_arg('swift-preview', Swift_Performance::get_preview_token(), home_url())
                   )
             );
       }
@@ -795,58 +798,152 @@ class Swift_Performance_Ajax {
       public function ajaxify(){
             define('DOING_SWIFT_AJAXIFY', true);
 
-            $data = json_decode(base64_decode($_POST['data']), true);
-
-            if (!empty($data[1])){
-                  global $post;
-                  $post = get_post($data[1]);
+            $data = (isset($_POST['data']) && is_string($_POST['data']) ? json_decode(base64_decode($_POST['data']), true) : false);
+            if (!is_array($data) || !isset($data[0]) || !is_string($data[0])){
+                  die;
             }
 
-            switch ($data[0]){
+            $type       = $data[0];
+            $post_id    = (isset($data[1]) && is_scalar($data[1]) ? absint($data[1]) : 0);
+            $key        = (isset($data[2]) && is_scalar($data[2]) ? (string)$data[2] : '');
+
+            // Feature should be enabled
+            $features = array(
+                  'block'           => 'lazyload_blocks',
+                  'shortcode'       => 'lazyload_shortcode',
+                  'template-part'   => 'lazyload_template_parts',
+                  'nav-menu'        => 'lazyload_nav_menu',
+                  'woo-price'       => 'init_woocommerce',
+                  'widget'          => 'lazyload_widgets',
+                  'elementor'       => 'lazyload_elementor_widgets',
+            );
+
+            if (!isset($features[$type])){
+                  die;
+            }
+
+            $is_available = Swift_Performance::is_feature_available($features[$type]);
+            if ($type == 'woo-price'){
+                  $is_available = class_exists('Swift_Performance_Pro');
+            }
+
+            if (!$is_available){
+                  die;
+            }
+
+            // Content can be rendered only in context of a post what the visitor can see anyway
+            if (!empty($post_id)){
+                  if (!self::is_post_readable($post_id)){
+                        die;
+                  }
+
+                  global $post;
+                  $post = get_post($post_id);
+            }
+
+            switch ($type){
                   case 'block':
-                        $block_data = Swift_Performance_Cache::get_lazyload_buffer($data[2]);
-                        $block      = new WP_Block($block_data);
-                        echo do_shortcode($block->render());
+                        $block_data = Swift_Performance_Cache::get_lazyload_buffer($key);
+                        if (!empty($block_data) && is_array($block_data) && class_exists('WP_Block')){
+                              $block      = new WP_Block($block_data);
+                              echo do_shortcode($block->render());
+                        }
                         break;
                   case 'shortcode':
                         $attributes = '';
-                        $shortcode = Swift_Performance_Cache::get_lazyload_buffer($data[2]);
+                        $shortcode = Swift_Performance_Cache::get_lazyload_buffer($key);
+
+                        if (empty($shortcode) || !is_array($shortcode) || !isset($shortcode[0]) || !is_string($shortcode[0])){
+                              break;
+                        }
 
                         if (isset($shortcode[1])){
-                              foreach ((array)$shortcode[1] as $key => $value){
-                                    $attributes.= $key . '="'.$value.'" ';
+                              foreach ((array)$shortcode[1] as $attribute => $value){
+                                    $attributes.= $attribute . '="'.$value.'" ';
                               }
                         }
 
                         echo do_shortcode('[' . $shortcode[0] . ' ' . $attributes . ']');
                         break;
                   case 'template-part':
-                        get_template_part(sanitize_file_name($data[2]));
+                        // Only that template parts can be loaded which were set in settings
+                        $template_parts = array_filter((array)Swift_Performance::get_option('lazyload-template-parts'));
+                        if (!empty($post_id) && Swift_Performance::check_option('page-specific-rules',1)){
+                              $settings = get_post_meta($post_id, 'swift_performance_options', true);
+                              if (is_array($settings) && isset($settings['override-globals']) && $settings['override-globals'] == 1 && isset($settings['lazyload-template-parts'])){
+                                    $template_parts = array_merge($template_parts, array_filter((array)$settings['lazyload-template-parts']));
+                              }
+                        }
+
+                        if ($key !== '' && in_array($key, $template_parts, true)){
+                              get_template_part(sanitize_file_name($key));
+                        }
                         break;
                   case 'nav-menu':
-                        $args = Swift_Performance_Cache::get_lazyload_buffer($data[2]);
-                        $args->echo = true;
-                        wp_nav_menu($args);
+                        $args = Swift_Performance_Cache::get_lazyload_buffer($key);
+                        if (!empty($args) && is_object($args)){
+                              $args->echo = true;
+                              wp_nav_menu($args);
+                        }
                         break;
                   case 'woo-price':
-                        $product_id = $data[2];
-                        $product    = wc_get_product($product_id);
-                        if ($product !== false && method_exists($product, 'get_price_html')){
-                              echo $product->get_price_html();
+                        if (Swift_Performance::check_option('woocommerce-price-ajaxify', 1) && function_exists('wc_get_product')){
+                              $product_id = absint($key);
+                              $product    = (!empty($product_id) && self::is_post_readable($product_id) ? wc_get_product($product_id) : false);
+                              if (!empty($product) && method_exists($product, 'get_price_html')){
+                                    echo $product->get_price_html();
+                              }
                         }
                         break;
                   case 'widget':
-                        $widget_data = Swift_Performance_Cache::get_lazyload_buffer($data[2]);
-                        the_widget($widget_data[0], $widget_data[1], $widget_data[2]);
+                        $widget_data = Swift_Performance_Cache::get_lazyload_buffer($key);
+                        if (!empty($widget_data) && is_array($widget_data) && isset($widget_data[0]) && is_string($widget_data[0]) && array_key_exists(1, $widget_data) && array_key_exists(2, $widget_data)){
+                              the_widget($widget_data[0], $widget_data[1], $widget_data[2]);
+                        }
                         break;
                   case 'elementor':
-                        $widget_data = Swift_Performance_Cache::get_lazyload_buffer($data[2]);
-                        $document = Elementor\Plugin::$instance->documents->get($data[1]);
-			      Elementor\Plugin::$instance->documents->switch_to_document( $document );
-	                  echo $document->render_element($widget_data);
+                        $widget_data = Swift_Performance_Cache::get_lazyload_buffer($key);
+                        if (!empty($widget_data) && is_array($widget_data) && !empty($post_id) && class_exists('Elementor\Plugin')){
+                              $document = Elementor\Plugin::$instance->documents->get($post_id);
+                              if (!empty($document)){
+                                    Elementor\Plugin::$instance->documents->switch_to_document( $document );
+                                    echo $document->render_element($widget_data);
+                              }
+                        }
                         break;
             }
             die;
+      }
+
+      /**
+       * Check that the current visitor is allowed to see the given post
+       * @param int $post_id
+       * @return boolean
+       */
+      public static function is_post_readable($post_id){
+            $post = get_post($post_id);
+            if (empty($post)){
+                  return false;
+            }
+
+            if (function_exists('is_post_publicly_viewable')){
+                  $public = is_post_publicly_viewable($post);
+            }
+            else {
+                  $status = get_post_status_object(get_post_status($post));
+                  $type   = get_post_type_object($post->post_type);
+                  $public = (!empty($status) && !empty($status->public) && !empty($type) && is_post_type_viewable($type));
+            }
+
+            if (!$public && !current_user_can('read_post', $post->ID)){
+                  return false;
+            }
+
+            if (post_password_required($post) && !current_user_can('edit_post', $post->ID)){
+                  return false;
+            }
+
+            return true;
       }
 
 }

@@ -116,7 +116,7 @@
 </div>
 
 <?php if ($caching_on && (!defined('SWIFT_PERFORMANCE_DISABLE_CACHE') || !SWIFT_PERFORMANCE_DISABLE_CACHE)):?>
-<input type="hidden" id="swift-performance-warmup-table-url" value="<?php echo set_url_scheme( 'http://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'] );?>">
+<input type="hidden" id="swift-performance-warmup-table-url" value="<?php echo esc_attr(set_url_scheme( 'http://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'] ));?>">
 
 <div id="swift-cache-status-box" class="swift-box">
 	<h3><?php esc_html_e('Cache Status', 'swift-performance');?></h3>

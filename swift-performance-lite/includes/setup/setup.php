@@ -32,6 +32,11 @@ class Swift_Performance_Setup {
 	}
 
 	public function init(){
+		// Wizard is available only for administrators
+		if (!current_user_can('manage_options')){
+			return;
+		}
+
 		// Localization
 		$this->localize = array(
 				'i18n' => array(

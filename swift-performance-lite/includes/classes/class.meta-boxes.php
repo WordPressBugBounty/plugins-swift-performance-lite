@@ -19,6 +19,7 @@ class Swift_Performance_Meta_Boxes {
 			'name'	=> SWIFT_PERFORMANCE_PLUGIN_NAME,
 			'nonce_id'  => 'swift_performance_meta',
 			'meta_key'	=> 'swift_performance_options',
+			'capability'=> array('manage_options', 'unfiltered_html'),
 			'class'	=> 'swift-performance-settings',
 			'sections'	=> $this->get_sections(),
 			'post_type'	=> Swift_Performance::get_post_types(Swift_Performance::get_option('exclude-post-types'))
@@ -123,10 +124,22 @@ class Swift_Performance_Meta_Boxes {
 	public function override(){
 		$meta = (array)get_post_meta(get_the_ID(), 'swift_performance_options', true);
 		if (isset($meta['override-settings']) && $meta['override-settings'] == 1){
+			$allowed = self::get_allowed_fields();
 			foreach ($meta as $key => $value){
-				Swift_Performance::set_option($key, $value);
+				if (in_array($key, $allowed, true)){
+					Swift_Performance::set_option($key, $value);
+				}
 			}
 		}
+	}
+
+	/**
+	 * Get that option ids which can be overridden per page
+	 * @return array
+	 */
+	public static function get_allowed_fields(){
+		$vars = get_class_vars(__CLASS__);
+		return (array)$vars['fields'];
 	}
 
 }

@@ -17,7 +17,8 @@ class Luv_Framework_Meta_Fields extends Luv_Framework_Fields {
                   'sections'  => array(),
                   'layout'    => 'left',
                   'ajax'      => false,
-                  'nonce_id'  => ''
+                  'nonce_id'  => '',
+                  'capability'=> ''
             )));
 
             // Force post types to be an array
@@ -36,9 +37,28 @@ class Luv_Framework_Meta_Fields extends Luv_Framework_Fields {
             add_action('admin_enqueue_scripts', array($this, 'pre_enqueue_assets'), 0);
       }
 
+      /**
+       * Check that the current user is allowed to use the meta box (any of the given capabilities is enough)
+       * @return boolean
+       */
+      public function current_user_can_edit(){
+            $capabilities = (isset($this->args['capability']) ? array_filter((array)$this->args['capability']) : array());
+            if (empty($capabilities)){
+                  return true;
+            }
+
+            foreach ($capabilities as $capability){
+                  if (current_user_can($capability)){
+                        return true;
+                  }
+            }
+
+            return false;
+      }
+
       public function pre_enqueue_assets(){
             global $pagenow, $post;
-            if (in_array($pagenow, array('post.php', 'post-new.php')) && is_object($post) && property_exists($post, 'post_type') && in_array( $post->post_type, $this->args['post_types'])) {
+            if ($this->current_user_can_edit() && in_array($pagenow, array('post.php', 'post-new.php')) && is_object($post) && property_exists($post, 'post_type') && in_array( $post->post_type, $this->args['post_types'])) {
                   add_action('admin_footer', array($this, 'enqueue_scirpts'));
                   add_action('admin_enqueue_scripts', array($this, 'enqueue_styles'));
 
@@ -59,7 +79,7 @@ class Luv_Framework_Meta_Fields extends Luv_Framework_Fields {
 
       public function add_meta_box($post_type){
             $post_types = (is_array($this->args['post_type']) ? $this->args['post_type'] : preg_split('~,(\s*)?~', $this->args['post_type']));
-            if (in_array( $post_type, $post_types )) {
+            if ($this->current_user_can_edit() && in_array( $post_type, $post_types )) {
                   add_meta_box(sanitize_title($this->args['name']), $this->args['name'], array($this, 'render_meta_box'), $post_type, $this->args['context'], $this->args['priority']);
             }
       }
@@ -123,7 +143,7 @@ class Luv_Framework_Meta_Fields extends Luv_Framework_Fields {
             }
 
             // Check the user's permissions.
-            if (!current_user_can('edit_post', $post_id)){
+            if (!current_user_can('edit_post', $post_id) || !$this->current_user_can_edit()){
                   return;
             }
 
@@ -170,7 +190,15 @@ class Luv_Framework_Meta_Fields extends Luv_Framework_Fields {
       }
 
       public function save_post_ajax(){
-            $this->save_post_meta($_POST['luv_framework_post_id']);
+            $post_id = (isset($_POST['luv_framework_post_id']) ? (int)$_POST['luv_framework_post_id'] : 0);
+            if (empty($post_id) || !current_user_can('edit_post', $post_id) || !$this->current_user_can_edit()){
+                  wp_send_json(array(
+                        'result'    => 'error',
+                        'message'   => esc_html__('You don\'t have permission for this action.', 'luv-framework')
+                  ));
+            }
+
+            $this->save_post_meta($post_id);
             wp_send_json(array(
                   'result'    => 'success',
                   'message'   => esc_html__('Settings saved.', 'luv-framework')

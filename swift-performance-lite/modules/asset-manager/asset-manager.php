@@ -332,7 +332,7 @@ class Swift_Performance_Asset_Manager {
             $css              	= $lazyload_scripts_buffer = $dns_prefetch = $font_preload = $script_preload = $script_late_preload = $style_preload = $media_preload = $blocked_scripts = array();
 		$html             	= swift_performance_str_get_html(Swift_Performance_Asset_Manager::html_auto_fix($buffer));
             $schema           	= (is_ssl() ? 'https://' : 'http://');
-		$this->current_path	= ltrim(trailingslashit(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)),'/');
+		$this->current_path	= Swift_Performance::get_current_path();
 
             // Stop here if something really bad happened
             if ($html === false){
@@ -815,8 +815,8 @@ class Swift_Performance_Asset_Manager {
                               }
 					if (!$base64_excluded){
 	                              $attribute  = (isset($node->{'data-src'}) ? 'data-src' : 'src');
-	                              $img_path   = str_replace(apply_filters('swift_performance_media_host', home_url()), ABSPATH, $node->$attribute);
-	                              if (@file_exists($img_path) && filesize($img_path) <= Swift_Performance::get_option('base64-small-images-size')){
+	                              $img_path   = Swift_Performance::get_local_image(str_replace(apply_filters('swift_performance_media_host', home_url()), ABSPATH, $node->$attribute));
+	                              if ($img_path !== false && filesize($img_path) <= Swift_Performance::get_option('base64-small-images-size')){
 							$mime = Swift_Performance_Asset_Manager::get_image_mime($img_path);
 							if ($prebuild_booster->check($img_path)){
 								$node->$attribute = $prebuild_booster->get($img_path);
@@ -889,7 +889,7 @@ class Swift_Performance_Asset_Manager {
 	                              if ($args !== false){
 							$lazyloaded = true;
 	                                    foreach($args as $key=>$value){
-	                                          $attributes .= $key . '="' . $value . '" ';
+	                                          $attributes .= $key . '="' . str_replace('"', '&quot;', (string)$value) . '" ';
 	                                    }
 
 	                                    $node->outertext = '<img '.$attributes.' data-l>';
@@ -1723,53 +1723,58 @@ class Swift_Performance_Asset_Manager {
 			return apply_filters('swift_performance_lazyload_image_args', $args, $id);
 		}
 		else if (Swift_Performance::check_option('lazyload-images-placeholder', 'low-quality') && function_exists('imagecreatefromjpeg')){
-			$original = str_replace(Swift_Performance::site_url(), ABSPATH, preg_replace('~^//~', 'http://', $args['src']));
+			$lazy_load_src[0]	= "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+			$original		= str_replace(Swift_Performance::site_url(), ABSPATH, preg_replace('~^//~', 'http://', $args['src']));
+			$extension		= strtolower(pathinfo((string)parse_url($original, PHP_URL_PATH), PATHINFO_EXTENSION));
 
-			// Remote file
-			if (preg_match('~^http~', $original)){
-				$placeholder = preg_replace('~https?://~','',$original);
-			}
-			else {
-				$placeholder = str_replace(ABSPATH, '', $original);
-			}
+			// Placeholder can be generated only for jpg, png and gif
+			if (in_array($extension, array('jpg', 'jpeg', 'png', 'gif'), true)){
+				$placeholder = 'lazyload/' . md5($original) . '.' . $extension;
 
-			$placeholder_dir = SWIFT_PERFORMANCE_CACHE_DIR . 'lazyload/' .dirname($placeholder);
-
-			if (file_exists(SWIFT_PERFORMANCE_CACHE_DIR . 'lazyload/' . $placeholder)){
-				$lazy_load_src[0] = SWIFT_PERFORMANCE_CACHE_URL . 'lazyload/' . $placeholder;
-			}
-			else {
-				if (!file_exists($placeholder_dir)){
-		                  // No it isn't exists, so we try to create it
-		                  @mkdir($placeholder_dir, 0777, true);
-		            }
-				// Create placeholder
-				list($width, $height, $image_type) = getimagesize($original);
-
-				switch ($image_type){
-				      case 1: $source = imagecreatefromgif($original); break;
-				      case 2: $source = imagecreatefromjpeg($original);  break;
-				      case 3: $source = imagecreatefrompng($original); break;
-					default: $source = '';
-				}
-
-				if (!empty($image_type) && !empty($source)){
-					if ($image_type == 2){
-						imagejpeg ($source, SWIFT_PERFORMANCE_CACHE_DIR . 'lazyload/' . $placeholder, SWIFT_PERFORMANCE_LAZYLOAD_QUALITY);
-					}
-					else {
-						imagefilter($source,  IMG_FILTER_PIXELATE, SWIFT_PERFORMANCE_LAZYLOAD_PIXELATE);
-						imagepng ($source, SWIFT_PERFORMANCE_CACHE_DIR . 'lazyload/' . $placeholder, 9);
-					}
-					$lazy_load_src[0] = SWIFT_PERFORMANCE_CACHE_URL . 'lazyload/' . $placeholder;
-					if (Swift_Performance::check_option('serve-webp', 'none', '!=') && function_exists('imagewebp')){
-						@imagewebp ($source, SWIFT_PERFORMANCE_CACHE_DIR . 'lazyload/' . $placeholder, SWIFT_PERFORMANCE_LAZYLOAD_QUALITY);
-					}
+				if (file_exists(SWIFT_PERFORMANCE_CACHE_DIR . $placeholder)){
+					$lazy_load_src[0] = SWIFT_PERFORMANCE_CACHE_URL . $placeholder;
 				}
 				else {
-					$lazy_load_src[0] = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-				}
+					if (!file_exists(SWIFT_PERFORMANCE_CACHE_DIR . 'lazyload')){
+						// No it isn't exists, so we try to create it
+						@mkdir(SWIFT_PERFORMANCE_CACHE_DIR . 'lazyload', 0777, true);
+					}
 
+					// Load original image
+					$image_data = '';
+					if (preg_match('~^https?://~i', $original)){
+						$response = wp_safe_remote_get($original, array('sslverify' => false, 'timeout' => 15, 'headers' => array('Referer' => home_url())));
+						if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) == 200){
+							$image_data = wp_remote_retrieve_body($response);
+						}
+					}
+					else {
+						$local_image = Swift_Performance::get_local_image($original, array('jpg', 'jpeg', 'png', 'gif'));
+						if ($local_image !== false){
+							$image_data = @file_get_contents($local_image);
+						}
+					}
+
+					// Create placeholder
+					$image_info	= (!empty($image_data) ? @getimagesizefromstring($image_data) : false);
+					$source	= (!empty($image_info) && in_array($image_info[2], array(1, 2, 3)) ? @imagecreatefromstring($image_data) : false);
+
+					if (!empty($source)){
+						list($width, $height, $image_type) = $image_info;
+
+						if ($image_type == 2){
+							imagejpeg ($source, SWIFT_PERFORMANCE_CACHE_DIR . $placeholder, SWIFT_PERFORMANCE_LAZYLOAD_QUALITY);
+						}
+						else {
+							imagefilter($source,  IMG_FILTER_PIXELATE, SWIFT_PERFORMANCE_LAZYLOAD_PIXELATE);
+							imagepng ($source, SWIFT_PERFORMANCE_CACHE_DIR . $placeholder, 9);
+						}
+						$lazy_load_src[0] = SWIFT_PERFORMANCE_CACHE_URL . $placeholder;
+						if (Swift_Performance::check_option('serve-webp', 'none', '!=') && function_exists('imagewebp')){
+							@imagewebp ($source, SWIFT_PERFORMANCE_CACHE_DIR . $placeholder, SWIFT_PERFORMANCE_LAZYLOAD_QUALITY);
+						}
+					}
+				}
 			}
 		}
 		else if ($id <= 0 || Swift_Performance::check_option('lazyload-images-placeholder', 'transparent') || preg_match('~\.svg$~',$args['src'])){
@@ -1793,7 +1798,7 @@ class Swift_Performance_Asset_Manager {
 				}
 				else {
 					$src = (preg_match('~^//~', $args['src']) ? 'https:' . $args['src'] : (preg_match('~^http~', $args['src']) ? $args['src'] : parse_url(Swift_Performance::home_url(), PHP_URL_SCHEME) . '://' . $args['src']));
-					$response = wp_remote_get($src, array('sslverify' => false, 'timeout' => 15, 'headers' => array('Referer' => home_url())));
+					$response = wp_safe_remote_get($src, array('sslverify' => false, 'timeout' => 15, 'headers' => array('Referer' => home_url())));
 
 					if (is_wp_error($response) || empty($response['body'])){
 						return false;
@@ -2125,18 +2130,21 @@ class Swift_Performance_Asset_Manager {
       }
 
 	public static function get_webp_filename($original_src){
+		if (!is_string($original_src) || preg_match('~["<>]~', $original_src)){
+			return false;
+		}
 		if (preg_match('~^/(\w+)~', $original_src)){
 			$webp_path = ABSPATH . Swift_Performance::canonicalize($original_src) . '.webp';
 		}
 		else {
 			$webp_path = str_replace(apply_filters('swift_performance_media_host',Swift_Performance::home_url()), ABSPATH, Swift_Performance::canonicalize($original_src)) . '.webp';
 		}
-		if (file_exists($webp_path)){
+		if (strpos($webp_path, '://') === false && file_exists($webp_path)){
 			return $original_src . '.webp';
 		}
 		else {
 			$webp_path = preg_replace('~\.(jpe?g|gif|png)\.webp$~', '.webp', $webp_path);
-			if (file_exists($webp_path)){
+			if (strpos($webp_path, '://') === false && file_exists($webp_path)){
 				return preg_replace('~\.(jpe?g|gif|png)$~', '.webp', $original_src);
 			}
 		}

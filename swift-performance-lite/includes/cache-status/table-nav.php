@@ -1,5 +1,5 @@
 <div class="swift-table-nav">
-      <form class="swift-list-table-filter" action="<?php echo set_url_scheme( 'http://' . $_SERVER['HTTP_HOST'] . preg_replace('~\?(.*)~','',$_SERVER['REQUEST_URI'] ))?>">
+      <form class="swift-list-table-filter" action="<?php echo esc_url(set_url_scheme( 'http://' . $_SERVER['HTTP_HOST'] . preg_replace('~\?(.*)~','',$_SERVER['REQUEST_URI'] )))?>">
             <select name="cache-status-filter">
                   <option value=""><?php esc_html_e('All Status', 'swift-performance');?></option>
                   <option value="cached"<?php echo (isset($_REQUEST['cache-status-filter']) ? ' ' . selected($_REQUEST['cache-status-filter'], 'cached', false) : '')?>><?php esc_html_e('Cached', 'swift-performance');?></option>

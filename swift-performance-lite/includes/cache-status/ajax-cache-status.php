@@ -45,12 +45,12 @@ class Swift_Performance_Ajax_Cache_Status_Table extends Swift_Performance_Dynami
                   if ($key == 'action'){
                         continue;
                   }
-                  $params[] = "{$key}: {$value}";
+                  $params[] = esc_html($key . ': ' . (is_scalar($value) ? $value : wp_json_encode($value)));
             }
 
             $request = '<br><small>'.implode(', ', $params).'</small>';
 
-            return sprintf('%1$s %2$s %3$s', $item['action'], $request, $this->row_actions($actions));
+            return sprintf('%1$s %2$s %3$s', esc_html($item['action']), $request, $this->row_actions($actions));
       }
 
     public function get_items()
@@ -64,7 +64,7 @@ class Swift_Performance_Ajax_Cache_Status_Table extends Swift_Performance_Dynami
 
             $items[] = array(
                      'id'                => $id,
-                     'action'            => strtolower($page['params']['action']),
+                     'action'            => (isset($page['params']['action']) && is_scalar($page['params']['action']) ? strtolower($page['params']['action']) : ''),
                      'params'            => $page['params'],
                      'cache_status'      => true,
                      'timestamp'         =>  $page['time'],

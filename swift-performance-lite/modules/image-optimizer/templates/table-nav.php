@@ -2,7 +2,7 @@
       $search = (isset($_REQUEST['s']) ? $_REQUEST['s'] : '');
 ?>
 <div class="swift-table-nav">
-      <form class="swift-list-table-filter" action="<?php echo set_url_scheme( 'http://' . $_SERVER['HTTP_HOST'] . preg_replace('~\?(.*)~','',$_SERVER['REQUEST_URI'] ))?>">
+      <form class="swift-list-table-filter" action="<?php echo esc_url(set_url_scheme( 'http://' . $_SERVER['HTTP_HOST'] . preg_replace('~\?(.*)~','',$_SERVER['REQUEST_URI'] )))?>">
             <select name="status-filter">
                   <option value=""><?php esc_html_e('All Status', 'swift-performance');?></option>
                   <option value="1"<?php echo (isset($_REQUEST['status-filter']) ? ' ' . selected($_REQUEST['status-filter'], '1', false) : '')?>><?php esc_html_e('Optimized', 'swift-performance');?></option>

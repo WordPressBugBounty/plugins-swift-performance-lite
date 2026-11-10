@@ -496,6 +496,19 @@ class swift_performance_swift_performance_simple_html_dom_node
 					case SWIFT_HDOM_QUOTE_SINGLE: $quote = '\''; break;
 					default: $quote = '';
 				}
+				// Keep attribute boundaries if the value was changed
+				if (is_string($val)){
+					if ($quote === '"'){
+						$val = str_replace('"', '&quot;', $val);
+					}
+					else if ($quote === '\''){
+						$val = str_replace('\'', '&#39;', $val);
+					}
+					else if ($val === '' || preg_match('~[\s>]~', $val)){
+						$quote = '"';
+						$val = str_replace('"', '&quot;', $val);
+					}
+				}
 				$ret .= $key.$this->_[SWIFT_HDOM_INFO_SPACE][$i][1].'='.$this->_[SWIFT_HDOM_INFO_SPACE][$i][2].$quote.$val.$quote;
 			}
 		}

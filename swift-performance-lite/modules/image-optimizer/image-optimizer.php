@@ -120,11 +120,11 @@ class Swift_Performance_Image_Optimizer {
 	 * Ajax handler
 	 */
 	public function ajax_handler(){
-		Swift_Performance::update_option('exclude-webp', array());
 		global $wpdb;
 		if (!current_user_can('manage_options') || !isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'swift-optimize-images')){
 			return;
 		}
+		Swift_Performance::update_option('exclude-webp', array());
 		$action = isset($_POST['swift_performance_action']) ? $_POST['swift_performance_action'] : '';
 		$images = array('count' => 0);
 

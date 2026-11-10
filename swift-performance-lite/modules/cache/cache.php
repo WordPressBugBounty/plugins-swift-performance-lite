@@ -16,6 +16,15 @@ class Swift_Performance_Cache {
       // Run time disable caching
       public $disabled_cache = false;
 
+      // Is current path a per user (logged in) path
+      public $authenticated = false;
+
+      // Hash of the user from the logged in cookie
+      public $authenticated_hash = '';
+
+      // Is the logged in cookie valid (null means not checked yet)
+      public $authenticated_valid = null;
+
       // Contain Headers
       public $headers = array();
 
@@ -31,6 +40,9 @@ class Swift_Performance_Cache {
             if (!isset($_GET['force-cached']) && defined('LOGGED_IN_COOKIE') && isset($_COOKIE[LOGGED_IN_COOKIE]) && Swift_Performance::check_option('shared-logged-in-cache', '1', '!=')){
                   @list($user_login,,,) = explode('|', $_COOKIE[LOGGED_IN_COOKIE]);
                   $hash = md5($user_login . NONCE_SALT);
+
+                  $this->authenticated      = true;
+                  $this->authenticated_hash = $hash;
 
                   $this->path = trailingslashit(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) . '/' . $device . '/authenticated/' . $hash . '/');
             }
@@ -185,7 +197,12 @@ class Swift_Performance_Cache {
             }
 
             // Clear post cache on user action
-            add_action('init', array('Swift_Performance_Cache', 'clear_on_user_action'));
+            if (!defined('SWIFT_PERFORMANCE_CLEAR_CACHE_ON_COMMENT') || SWIFT_PERFORMANCE_CLEAR_CACHE_ON_COMMENT){
+                  add_action('comment_post', array('Swift_Performance_Cache', 'clear_on_comment'), 10, 3);
+            }
+            add_action('bbp_new_reply', array('Swift_Performance_Cache', 'clear_on_bbpress_reply'), 10, 2);
+            add_action('bp_activity_posted_update', array('Swift_Performance_Cache', 'clear_on_buddypress_update'), 10, 0);
+            add_action('bp_groups_posted_update', array('Swift_Performance_Cache', 'clear_on_buddypress_group_update'), 10, 3);
 
             // Force no cache mode
             if (isset($_GET['swift-no-cache'])){
@@ -204,7 +221,18 @@ class Swift_Performance_Cache {
 
             // Load cache
             if (!$this->no_cache){
-                  $this->load_cache();
+                  // Per user cache can be loaded only after the logged in cookie has been validated
+                  if ($this->authenticated){
+                        if (function_exists('wp_validate_auth_cookie')){
+                              $this->load_authenticated_cache();
+                        }
+                        else {
+                              add_action('plugins_loaded', array($this, 'load_authenticated_cache'), 0);
+                        }
+                  }
+                  else {
+                        $this->load_cache();
+                  }
             }
 
             // Set cache
@@ -295,7 +323,7 @@ class Swift_Performance_Cache {
                         return array_unique($shortcodes);
                   });
 
-                  if (isset($_SERVER['HTTP_X_PREBUILD'])){
+                  if (Swift_Performance::is_prebuild_request()){
                         add_filter('woocommerce_checkout_redirect_empty_cart', '__return_false');
                   }
 
@@ -334,7 +362,7 @@ class Swift_Performance_Cache {
             do_action('swift_performance_before_set_cache', $this->buffer);
 
             // Don't write cache if there isn't free thread for optimizing assets
-            if ($this->disabled_cache || (defined('SWIFT_PERFORMANCE_DISABLE_CACHE') && SWIFT_PERFORMANCE_DISABLE_CACHE)){
+            if ($this->disabled_cache || (defined('SWIFT_PERFORMANCE_DISABLE_CACHE') && SWIFT_PERFORMANCE_DISABLE_CACHE) || !$this->is_authenticated_user_valid()){
                   return;
             }
 
@@ -450,10 +478,7 @@ class Swift_Performance_Cache {
                         $request_uri = (isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '');
                         $expiry = apply_filters('swift_performance_dynamic_cache_expiry', (Swift_Performance::check_option('cache-expiry-mode', 'actionbased') ? YEAR_IN_SECONDS : Swift_Performance::get_option('cache-expiry-time')), $request_uri);
 
-                        $params = array_merge($_POST);
-                        foreach ($params as $key => $value){
-                              $params[$key] = substr(esc_html($value), 0, 100);
-                        }
+                        $params = self::get_display_params($_POST);
 
                         set_transient('swift_performance_dynamic_' . Swift_Performance::get_unique_id(), array('time' => time(), 'basename' => $basename, 'content' => $this->buffer, 'request_uri' => $request_uri, 'expiry' => $expiry, 'params' => $params), $expiry);
                         Swift_Performance::log('Dynamic cache (db) ' . $_SERVER['REQUEST_URI'] . serialize($_REQUEST), 9);
@@ -542,9 +567,29 @@ class Swift_Performance_Cache {
       }
 
       /**
+       * Prepare request parameters for the cache status tables (names and values are stored escaped and shortened)
+       * @param array $request
+       * @return array
+       */
+      public static function get_display_params($request){
+            $params = array();
+            foreach ((array)$request as $key => $value){
+                  $key   = substr(esc_html((string)$key), 0, 100);
+                  $value = substr(esc_html(is_scalar($value) ? (string)$value : wp_json_encode($value)), 0, 100);
+                  $params[$key] = $value;
+            }
+            return $params;
+      }
+
+      /**
        * Set AJAX object transient
        */
       public function set_ajax_cache(){
+            // Don't store the response if caching was disabled for the request, or the user can't be verified
+            if ($this->disabled_cache || (defined('SWIFT_PERFORMANCE_DISABLE_CACHE') && SWIFT_PERFORMANCE_DISABLE_CACHE) || !$this->is_authenticated_user_valid()){
+                  return $this->buffer;
+            }
+
             // Set AJAX object expiry
             $expiry = Swift_Performance::get_option('ajax-cache-expiry-time');
 
@@ -554,10 +599,7 @@ class Swift_Performance_Cache {
                   }
             }
 
-            $params = array_merge($_GET,$_POST);
-            foreach ($params as $key => $value){
-                  $params[$key] = substr(esc_html($value), 0, 100);
-            }
+            $params = self::get_display_params(array_merge($_GET,$_POST));
 
             // Store AJAX object in db if we are using disk cache
             if (Swift_Performance::check_option('caching-mode', array('disk_cache_rewrite', 'disk_cache_php'), 'IN')){
@@ -574,6 +616,46 @@ class Swift_Performance_Cache {
       }
 
 
+
+      /**
+       * Load per user cache if the logged in cookie is valid
+       */
+      public function load_authenticated_cache(){
+            if ($this->is_authenticated_user_valid()){
+                  $this->load_cache();
+            }
+      }
+
+      /**
+       * Check that the logged in cookie (which was used for the cache path) belongs to a real session
+       * @return boolean
+       */
+      public function is_authenticated_user_valid(){
+            // Not a per user path
+            if (!$this->authenticated){
+                  return true;
+            }
+
+            if ($this->authenticated_valid !== null){
+                  return $this->authenticated_valid;
+            }
+
+            // Too early to decide
+            if (!function_exists('wp_validate_auth_cookie') || !function_exists('get_userdata')){
+                  return false;
+            }
+
+            $this->authenticated_valid = false;
+            if (defined('LOGGED_IN_COOKIE') && isset($_COOKIE[LOGGED_IN_COOKIE]) && is_string($_COOKIE[LOGGED_IN_COOKIE])){
+                  $user_id = wp_validate_auth_cookie($_COOKIE[LOGGED_IN_COOKIE], 'logged_in');
+                  if (!empty($user_id)){
+                        $user = get_userdata($user_id);
+                        $this->authenticated_valid = (!empty($user) && hash_equals($this->authenticated_hash, md5($user->user_login . NONCE_SALT)));
+                  }
+            }
+
+            return $this->authenticated_valid;
+      }
 
       /**
        * Load cached file and stop if file exists
@@ -1010,28 +1092,75 @@ class Swift_Performance_Cache {
        * Check known user actions when we should clear post cache
        */
       public static function clear_on_user_action(){
-            // Comment
-            if (isset($_POST['comment_post_ID']) && !empty($_POST['comment_post_ID']) && (!defined('SWIFT_PERFORMANCE_CLEAR_CACHE_ON_COMMENT') || SWIFT_PERFORMANCE_CLEAR_CACHE_ON_COMMENT) ){
-                  self::clear_post_cache($_POST['comment_post_ID']);
+            // Deprecated, cache is cleared on the real events (see hooks in constructor)
+      }
+
+      /**
+       * Clear post cache when a comment was created
+       * @param int $comment_id
+       * @param int|string $approved
+       * @param array $commentdata
+       */
+      public static function clear_on_comment($comment_id = 0, $approved = 0, $commentdata = array()){
+            $post_id = (is_array($commentdata) && isset($commentdata['comment_post_ID']) ? (int)$commentdata['comment_post_ID'] : 0);
+            if (empty($post_id) && !empty($comment_id)){
+                  $comment = get_comment($comment_id);
+                  $post_id = (!empty($comment) ? (int)$comment->comment_post_ID : 0);
+            }
+
+            if (!empty($post_id)){
+                  self::clear_post_cache($post_id);
                   Swift_Performance::log('Clear post cache triggered (new comment) ', 9);
             }
+      }
 
-            // bbPress comment
-            else if (isset($_POST['bbp_reply_content']) && isset($_POST['bbp_topic_id']) && !empty($_POST['bbp_topic_id'])){
-                  self::clear_post_cache($_POST['bbp_topic_id']);
+      /**
+       * Clear topic cache when a bbPress reply was created
+       * @param int $reply_id
+       * @param int $topic_id
+       */
+      public static function clear_on_bbpress_reply($reply_id = 0, $topic_id = 0){
+            if (!empty($topic_id)){
+                  self::clear_post_cache((int)$topic_id);
                   Swift_Performance::log('Clear post cache triggered (new bbPress comment) ', 9);
             }
+      }
 
-            // Buddypress
-            else if (function_exists('bp_get_root_domain') && isset($_POST['action']) && $_POST['action'] == 'post_update'){
+      /**
+       * Clear activity cache when a BuddyPress update was posted
+       */
+      public static function clear_on_buddypress_update(){
+            self::clear_buddypress_cache(0);
+      }
+
+      /**
+       * Clear group cache when a BuddyPress group update was posted
+       * @param string $content
+       * @param int $user_id
+       * @param int $group_id
+       */
+      public static function clear_on_buddypress_group_update($content = '', $user_id = 0, $group_id = 0){
+            if (!empty($group_id)){
+                  self::clear_buddypress_cache((int)$group_id);
+            }
+      }
+
+      /**
+       * Clear BuddyPress activity/group cache
+       * @param int $group_id
+       */
+      public static function clear_buddypress_cache($group_id = 0){
+            if (function_exists('bp_get_root_domain')){
                   $bb_permalink = '';
-                  if (isset($_POST['object']) && $_POST['object'] == 'group'){
-                        if (isset($_POST['item_id']) && !empty($_POST['item_id'])){
-                              $group = groups_get_group( array( 'group_id' => $_POST['item_id'] ) );
-                              $bb_permalink = trailingslashit( bp_get_root_domain() . '/' . bp_get_groups_root_slug() . '/' . $group->slug . '/' );
+                  if (!empty($group_id)){
+                        if (function_exists('groups_get_group') && function_exists('bp_get_groups_root_slug')){
+                              $group = groups_get_group( array( 'group_id' => (int)$group_id ) );
+                              if (!empty($group) && !empty($group->slug)){
+                                    $bb_permalink = trailingslashit( bp_get_root_domain() . '/' . bp_get_groups_root_slug() . '/' . $group->slug . '/' );
+                              }
                         }
                   }
-                  else if ((!isset($_POST['object']) || empty($_POST['object'])) && (!isset($_POST['item_id']) || empty($_POST['item_id']))){
+                  else {
                         $bb_permalink = str_replace(home_url(), '', bp_get_root_domain() .'/'. bp_get_root_slug());
                   }
 
@@ -1594,8 +1723,8 @@ class Swift_Performance_Cache {
             $is_404                 = (Swift_Performance::check_option('cache-404',1) || !Swift_Performance::is_404());
             $is_403                 = apply_filters('swift_performance_is_403', http_response_code() != 403);
             $is_503                 = apply_filters('swift_performance_is_503', http_response_code() != 503);
-            $query_string           = (isset($_SERVER['HTTP_X_PREBUILD']) || empty($get));
-            $post                   = (isset($_SERVER['HTTP_X_PREBUILD']) || empty($_POST));
+            $query_string           = (Swift_Performance::is_prebuild_request() || empty($get));
+            $post                   = (Swift_Performance::is_prebuild_request() || empty($_POST));
             $excluded               = !self::is_exluded();
             $archive                = (Swift_Performance::check_option('exclude-archive',1) && Swift_Performance::is_archive() ? false : true);
             $author                 = (Swift_Performance::check_option('exclude-author',1) && Swift_Performance::is_author() ? false : true);
@@ -2088,7 +2217,7 @@ class Swift_Performance_Cache {
             $file = urldecode($file);
 
             // Play in the sandbox only...
-            if (strpos($file, './')){
+            if (!Swift_Performance::is_safe_path($file, false)){
                   return;
             }
 
@@ -2107,18 +2236,12 @@ class Swift_Performance_Cache {
 
             }
 
-            // Logged in hash
-            $hash = '';
-            if (defined('LOGGED_IN_COOKIE') && isset($_COOKIE[LOGGED_IN_COOKIE])){
-                  list(,,, $hash) = explode('|', $_COOKIE[LOGGED_IN_COOKIE]);
-            }
-
-            // Create empty index.html in every folder recursively to prevent directory index in cache
+            // Create empty index.html to prevent directory index in the js folder and in the per user cache folders
             $current = SWIFT_PERFORMANCE_CACHE_DIR;
             $folders = explode('/', dirname($file));
             for ($i=0;$i<count($folders);$i++){
                   $current .= $folders[$i] . '/';
-                  if (($current == SWIFT_PERFORMANCE_CACHE_DIR . 'js/' || ($folders[$i] == 'authenticated' && isset($folders[$i+1]) && $folders[$i+1] == md5($hash))) && !file_exists($current . 'index.html')){
+                  if (($current == SWIFT_PERFORMANCE_CACHE_DIR . 'js/' || ($folders[$i] == 'authenticated' && isset($folders[$i+1]) && isset($folders[$i-1]) && in_array($folders[$i-1], array('desktop', 'mobile')))) && !file_exists($current . 'index.html')){
                         @touch($current . 'index.html');
                   }
             }
@@ -2573,7 +2696,7 @@ class Swift_Performance_Cache {
             }
 
             $buffer     = (array)get_option('swift_performance_lazyload_buffer');
-            $hash       = hash('crc32', json_encode($data));
+            $hash       = md5(json_encode($data));
 
             $buffer[$hash] = $data;
             update_option('swift_performance_lazyload_buffer', $buffer, false);
@@ -2588,6 +2711,10 @@ class Swift_Performance_Cache {
        */
       public static function get_lazyload_buffer($key){
             $buffer = (array)get_option('swift_performance_lazyload_buffer');
+            if (!is_scalar($key) || $key === '' || !isset($buffer[$key])){
+                  return false;
+            }
+
             return $buffer[$key];
       }
 
